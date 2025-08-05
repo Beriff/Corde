@@ -1,0 +1,398 @@
+﻿using Corde.Base;
+using Corde.Graphics;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Corde.Input
+{
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WinPoint
+    {
+        public int x;
+        public int y;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WinRect
+    {
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct Coord
+    {
+        public short x;
+        public short y;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct CONSOLE_FONT_INFO
+    {
+        public int nFont;
+        public Coord dwFontSize;
+    }
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct MOUSE_EVENT_RECORD
+    {
+        [FieldOffset(0)]
+        public Coord MousePosition;
+        [FieldOffset(4)]
+        public uint ButtonState;
+        [FieldOffset(8)]
+        public uint ControlKeyState;
+        [FieldOffset(12)]
+        public uint EventFlags;
+    }
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct KEY_EVENT_RECORD
+    {
+        [FieldOffset(0)]
+        public bool KeyDown;
+        [FieldOffset(4)]
+        public ushort RepeatCount;
+        [FieldOffset(6)]
+        public ushort VirtualKeyCode;
+        [FieldOffset(8)]
+        public ushort VirtualScanCode;
+        [FieldOffset(10)]
+        public char UnicodeChar;
+        [FieldOffset(12)]
+        public int ControlKeyState;
+    }
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct INPUT_RECORD
+    {
+        [FieldOffset(0)]
+        public ushort EventType;
+        [FieldOffset(4)]
+        public KEY_EVENT_RECORD KeyEvent;
+        [FieldOffset(4)]
+        public MOUSE_EVENT_RECORD MouseEvent;
+    }
+
+    public enum Keys
+    {
+        MouseLeft = 0x01,
+        MouseRight = 0x02,
+        MouseMiddle = 0x04,
+        Backspace = 0x08,
+        Tab = 0x09,
+        Enter = 0x0D,
+        Shift = 0x10,
+        Control = 0x11,
+        Alt = 0x12,
+        CapsLock = 0x14,
+        Esc = 0x1B,
+        Space = 0x20,
+        PageUp = 0x21,
+        PageDown = 0x22,
+        End = 0x23,
+        Home = 0x24,
+        ArrowLeft = 0x25,
+        ArrowUp = 0x26,
+        ArrowRight = 0x27,
+        ArrowDown = 0x28,
+        Del = 0x2E,
+        _0 = 0x30,
+        _1 = 0x31,
+        _2 = 0x32,
+        _3 = 0x33,
+        _4 = 0x34,
+        _5 = 0x35,
+        _6 = 0x36,
+        _7 = 0x37,
+        _8 = 0x38,
+        _9 = 0x39,
+        A = 0x41,
+        B = 0x42,
+        C = 0x43,
+        D = 0x44,
+        E = 0x45,
+        F = 0x46,
+        G = 0x47,
+        H = 0x48,
+        I = 0x49,
+        J = 0x4A,
+        K = 0x4B,
+        L = 0x4C,
+        M = 0x4D,
+        N = 0x4E,
+        O = 0x4F,
+        P = 0x50,
+        Q = 0x51,
+        R = 0x52,
+        S = 0x53,
+        T = 0x54,
+        U = 0x55,
+        V = 0x56,
+        W = 0x57,
+        X = 0x58,
+        Y = 0x59,
+        Z = 0x5A,
+        Num0 = 0x60,
+        Num1 = 0x61,
+        Num2 = 0x62,
+        Num3 = 0x63,
+        Num4 = 0x64,
+        Num5 = 0x65,
+        Num6 = 0x66,
+        Num7 = 0x67,
+        Num8 = 0x68,
+        Num9 = 0x69,
+        F1 = 0x70,
+        F2 = 0x71,
+        F3 = 0x72,
+        F4 = 0x73,
+        F5 = 0x74,
+        F6 = 0x75,
+        F7 = 0x76,
+        F8 = 0x77,
+        F9 = 0x78,
+        F10 = 0x79,
+        F11 = 0x7A,
+        F12 = 0x7B,
+        NumLock = 0x90,
+        ScrollLock = 0x91
+    }
+    public enum InputType
+    {
+        Pressed, Released,
+        JustPressed, JustReleased
+    }
+
+    public static class InputHandler
+    {
+        private const uint ENABLE_QUICK_EDIT = 0x0040;
+        private const int STD_INPUT_HANDLE = -10;
+        private const int STD_OUTPUT_HANDLE = -11;
+        private static IntPtr ConsoleWindowHandle;
+        public static Vec2I FontSize { get; private set; }
+        public static int TitleBarHeight { get; private set; }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetAsyncKeyState(int button);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GetStdHandle(int nStdHandle);
+        [DllImport("kernel32.dll")]
+        private static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+        [DllImport("kernel32.dll")]
+        private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out WinPoint point);
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetConsoleWindow();
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out WinRect lpRect);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetCurrentConsoleFont(IntPtr hConsoleOutput, bool bMaximumWindow, out CONSOLE_FONT_INFO lpConsoleCurrentFontInfo);
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nCmdId);
+        [DllImport("kernel32.dll")]
+        private static extern bool GetNumberOfConsoleInputEvents(IntPtr hConsoleInput, out int lpcNumberOfEvents);
+        [DllImport("kernel32.dll")]
+        private static extern bool PeekConsoleInput(IntPtr hconsoleInput, [Out] INPUT_RECORD[] lpBuffer, int nLength, out int lpNumberOfEventsRead);
+        [DllImport("User32.dll")]
+        public static extern long SetCursorPos(int x, int y);
+
+        [DllImport("User32.dll")]
+        public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
+        [DllImport("user32.dll")]
+        private static extern int ShowCursor(bool bShow);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int x;
+            public int y;
+
+            public POINT(int X, int Y)
+            {
+                x = X;
+                y = Y;
+            }
+        }
+
+
+        public static Dictionary<Keys, bool> PrevKeysState { get; private set; }
+        public static Dictionary<Keys, bool> CurrentKeysState { get; private set; }
+        public static Vec2I PrevMousePos { get; private set; }
+        public static Vec2I CurrentMousePos { get; private set; }
+        public static Vec2I MouseDelta
+        {
+            get => CurrentMousePos - PrevMousePos;
+        }
+
+        private static IntPtr InputConsoleHandle { get; set; }
+        private static IntPtr OutputConsoleHandle { get; set; }
+        public static Vec2I MousePosPx
+        {
+            get
+            {
+                GetCursorPos(out WinPoint pos);
+                GetWindowRect(ConsoleWindowHandle, out WinRect wr);
+                return new Vec2I(pos.x, pos.y) - new Vec2I(wr.left, wr.top);
+            }
+        }
+        public static void SetCursorVisibility(bool visible)
+        {
+            ShowCursor(visible);
+        }
+        public static Vec2I MousePos(Buffer2D buf)
+        {
+            var coords = (MousePosPx - new Vec2I(0, TitleBarHeight)) / FontSize;
+            coords -= new Vec2I(1, 0);
+            if (coords.X < 0 || coords.Y < 0 || coords.X + 1 > buf.Size.X || coords.Y + 1 > buf.Size.Y)
+                return new(-1);
+            return (coords - new Vec2I(1, 0)).Clamp(new(0, 0), buf.Size - new Vec2I(1));
+        }
+        public static Vec2I MousePos()
+        {
+            return (MousePosPx - new Vec2I(0, TitleBarHeight)) / FontSize - new Vec2I(1, 0);
+        }
+        public static Vec2I WindowSize
+        {
+            get
+            {
+                GetWindowRect(ConsoleWindowHandle, out WinRect wr);
+                return new(wr.right, wr.bottom);
+            }
+        }
+        public static void SnapCursor()
+        {
+            var before_snap = MousePos();
+            GetWindowRect(ConsoleWindowHandle, out WinRect wr);
+            var center_x = wr.left + (wr.right - wr.left) / 2;
+            var center_y = wr.top + (wr.bottom - wr.top) / 2;
+            POINT p = new(center_x, center_y);
+            //ClientToScreen(this.Handle, ref p);
+            SetCursorPos(p.x, p.y);
+            var after_snap = MousePos();
+            PrevMousePos -= (after_snap - before_snap);
+
+        }
+        static InputHandler()
+        {
+            PrevKeysState = new();
+            CurrentKeysState = new();
+
+            // Set windows handle for console
+            ConsoleWindowHandle = GetConsoleWindow();
+
+
+            InputConsoleHandle = GetStdHandle(STD_INPUT_HANDLE);
+            OutputConsoleHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+
+            if (!GetCurrentConsoleFont(OutputConsoleHandle, false, out CONSOLE_FONT_INFO font))
+                throw new Exception("Unable to get console font");
+
+            if (!GetConsoleMode(InputConsoleHandle, out uint consoleMode))
+                throw new Exception("Unable to get console mode");
+
+            // Disable console quick edit
+            // (that prevents console hanging when user tries to select)
+
+            // Clear the quick edit bit in the mode flags
+            consoleMode &= ~ENABLE_QUICK_EDIT;
+
+            // Set the new mode
+            if (!SetConsoleMode(InputConsoleHandle, consoleMode))
+                throw new Exception("Unable to set console mode");
+
+            // Get console's font size
+            FontSize = new(font.dwFontSize.x, (int)font.dwFontSize.y);
+            // Get console window's title bar height
+            TitleBarHeight = GetSystemMetrics(30);
+        }
+
+        public static bool KeyPressed(Keys key)
+        {
+            return GetAsyncKeyState((int)key);
+        }
+
+        public static void Update()
+        {
+            PrevKeysState = new(CurrentKeysState);
+            foreach (var key in Enum.GetValues(typeof(Keys)).Cast<Keys>())
+            {
+                CurrentKeysState[key] = KeyPressed(key);
+            }
+
+            PrevMousePos = CurrentMousePos;
+            CurrentMousePos = MousePos();
+
+        }
+
+        public static InputType KeyState(Keys key)
+        {
+            if (CurrentKeysState.Count == 0 || PrevKeysState.Count == 0)
+                return InputType.Released;
+
+            if (CurrentKeysState[key])
+            {
+                if (PrevKeysState[key])
+                    return InputType.Pressed;
+                else
+                    return InputType.JustPressed;
+            }
+            else
+            {
+                if (PrevKeysState[key])
+                    return InputType.JustReleased;
+                else
+                    return InputType.Released;
+            }
+        }
+
+        public static char? LetterKey(Keys key)
+        {
+            return key switch
+            {
+                Keys.A => 'A',
+                Keys.B => 'B',
+                Keys.C => 'C',
+                Keys.D => 'D',
+                Keys.E => 'E',
+                Keys.F => 'F',
+                Keys.G => 'G',
+                Keys.H => 'H',
+                Keys.I => 'I',
+                Keys.J => 'J',
+                Keys.K => 'K',
+                Keys.L => 'L',
+                Keys.M => 'M',
+                Keys.N => 'N',
+                Keys.O => 'O',
+                Keys.P => 'P',
+                Keys.Q => 'Q',
+                Keys.R => 'R',
+                Keys.S => 'S',
+                Keys.T => 'T',
+                Keys.U => 'U',
+                Keys.V => 'V',
+                Keys.W => 'W',
+                Keys.X => 'X',
+                Keys.Y => 'Y',
+                Keys.Z => 'Z',
+                Keys._1 => '1',
+                Keys._2 => '2',
+                Keys._3 => '3',
+                Keys._4 => '4',
+                Keys._5 => '5',
+                Keys._6 => '6',
+                Keys._7 => '7',
+                Keys._8 => '8',
+                Keys._9 => '9',
+                Keys._0 => '0',
+                Keys.Space => ' ',
+                _ => null
+            };
+        }
+    }
+}
