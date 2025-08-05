@@ -2,6 +2,8 @@
 using Corde.Graphics;
 using Corde.Input;
 
+using System.Data.Common;
+
 namespace Corde.Editor
 {
     public struct EditorSettings
@@ -38,27 +40,46 @@ namespace Corde.Editor
             SourceText = File.ReadAllText(path);
         }
 
-        public void Update()
+        private int CursorRawIndex
         {
-            InputHandler.Update();
-
-            // handle cursor movement
-            if (InputHandler.KeyState(Keys.ArrowLeft) == InputType.JustReleased)
+            get
             {
-                if(DocumentCursorPosition.X == 0)
+                int index = 0;
+
+                // Add lengths of all previous lines plus their line breaks
+                for (int i = 0; i < DocumentCursorPosition.Y; i++)
                 {
-                    if(DocumentCursorPosition.Y != 0)
+                    index += PreparedLines[i].Count + 2; // +2 for \r\n
+                }
+
+                // Add the column position in the current line
+                // Make sure we don't go past the end of the line
+                int currentLineLength = PreparedLines[DocumentCursorPosition.Y].Count;
+                index += Math.Min(DocumentCursorPosition.X, currentLineLength);
+
+                return index;
+            }
+            
+        }
+
+        private void ShiftCursorH(bool left = false)
+        {
+            if (left)
+            {
+                if (DocumentCursorPosition.X == 0)
+                {
+                    if (DocumentCursorPosition.Y != 0)
                     {
                         DocumentCursorPosition.Y--;
                         DocumentCursorPosition.X = PreparedLines[DocumentCursorPosition.Y].Count - 1;
                     }
-                } else
+                }
+                else
                 {
                     DocumentCursorPosition.X--;
                 }
                 PreferredCursorOffset = DocumentCursorPosition.X;
-            }
-            if (InputHandler.KeyState(Keys.ArrowRight) == InputType.JustReleased)
+            } else
             {
                 if (DocumentCursorPosition.X == PreparedLines[DocumentCursorPosition.Y].Count - 1)
                 {
@@ -67,27 +88,17 @@ namespace Corde.Editor
                         DocumentCursorPosition.X = 0;
                         DocumentCursorPosition.Y++;
                     }
-                } else
+                }
+                else
                 {
                     DocumentCursorPosition.X++;
                 }
                 PreferredCursorOffset = DocumentCursorPosition.X;
             }
-            if (InputHandler.KeyState(Keys.ArrowDown) == InputType.JustReleased)
-            {
-                if(DocumentCursorPosition.Y != PreparedLines.Count - 1)
-                {
-                    DocumentCursorPosition.Y++;
-                    if (PreparedLines[DocumentCursorPosition.Y].Count - 1 < PreferredCursorOffset)
-                    {
-                        DocumentCursorPosition.X = Math.Clamp(PreparedLines[DocumentCursorPosition.Y].Count - 1, 0, int.MaxValue);
-                    } else
-                    {
-                        DocumentCursorPosition.X = PreferredCursorOffset;
-                    }
-                }
-            }
-            if (InputHandler.KeyState(Keys.ArrowUp) == InputType.JustReleased)
+        }
+        private void ShiftCursorV(bool up = false)
+        {
+            if (up)
             {
                 if (DocumentCursorPosition.Y != 0)
                 {
@@ -101,6 +112,67 @@ namespace Corde.Editor
                         DocumentCursorPosition.X = PreferredCursorOffset;
                     }
                 }
+            } else
+            {
+                if (DocumentCursorPosition.Y != PreparedLines.Count - 1)
+                {
+                    DocumentCursorPosition.Y++;
+                    if (PreparedLines[DocumentCursorPosition.Y].Count - 1 < PreferredCursorOffset)
+                    {
+                        DocumentCursorPosition.X = Math.Clamp(PreparedLines[DocumentCursorPosition.Y].Count - 1, 0, int.MaxValue);
+                    }
+                    else
+                    {
+                        DocumentCursorPosition.X = PreferredCursorOffset;
+                    }
+                }
+            }
+        }
+
+        private void HandleUserInsertions()
+        {
+            foreach(var (key, _) in InputHandler.CurrentKeysState)
+            {
+                if(
+                    InputHandler.KeyState(key) == InputType.JustPressed && 
+                    InputHandler.LetterKey(key) != null
+                    )
+                {
+                    string inskey = InputHandler.LetterKey(key).ToString()!;
+                    if(!InputHandler.KeyPressed(Keys.Shift)) { inskey = inskey.ToLower(); }
+
+                    SourceText = SourceText.Insert(CursorRawIndex, inskey);
+                    ShiftCursorH();
+                }
+            }
+            if(InputHandler.KeyState(Keys.Backspace) == InputType.JustPressed)
+            {
+                SourceText = SourceText.Remove(CursorRawIndex - 1, 1);
+                ShiftCursorH(true);
+            }
+        }
+
+        public void Update()
+        {
+            InputHandler.Update();
+            HandleUserInsertions();
+
+            // handle cursor movement
+            if (InputHandler.KeyState(Keys.ArrowLeft) == InputType.JustReleased)
+            {
+                ShiftCursorH(true);
+            }
+            else if (InputHandler.KeyState(Keys.ArrowRight) == InputType.JustReleased)
+            {
+                ShiftCursorH();
+            }
+            if (InputHandler.KeyState(Keys.ArrowDown) == InputType.JustReleased)
+            {
+                ShiftCursorV();
+            }
+            if (InputHandler.KeyState(Keys.ArrowUp) == InputType.JustReleased)
+            {
+                ShiftCursorV(true);
             }
 
             // adjust camera to cursor pos
@@ -126,10 +198,10 @@ namespace Corde.Editor
         {
             PreparedLines.Clear();
 
+            // create and mark out side bar (line numbers)
             int locn_sidebar_width = SourceText.Count(c => c == '\n').ToString().Length + 1;
             SidebarBuffer = new(new(locn_sidebar_width, FrontBuffer.Area.Height));
             SidebarBuffer.Fill(new(' ', Settings.BackgroundColor));
-            TextBuffer = new(new(FrontBuffer.Area.Width - locn_sidebar_width, FrontBuffer.Area.Height));
             
             for(int i = 0; i < SidebarBuffer.Area.Height; i++)
             {
@@ -146,8 +218,11 @@ namespace Corde.Editor
                     SidebarBuffer[x, i] = new(n[x], new(Settings.BackgroundColor.Background, fg));
                 }
             }
-            
 
+            // create the code text buffer
+            TextBuffer = new(new(FrontBuffer.Area.Width - locn_sidebar_width, FrontBuffer.Area.Height));
+
+            // Fill PreparedLines array
             int newline_count = 0;
             PreparedLines.Add([]);
 
@@ -174,7 +249,7 @@ namespace Corde.Editor
                 );
             }
 
-            // add cursor
+            // Add cursor
             EditorSymbol selected;
             if(PreparedLines[DocumentCursorPosition.Y].Count > DocumentCursorPosition.X)
             {
