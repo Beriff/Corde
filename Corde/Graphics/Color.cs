@@ -34,6 +34,10 @@ namespace Corde.Graphics
 		{
 			return ((byte,byte,byte))((255 - a.R) / 2, (255 - a.G) / 2, (255 - a.B) / 2);
 		}
+		public static ColorPack Lighten(ColorPack c, float s)
+		{
+            return ((byte, byte, byte))(c.R * s, c.G * s, c.B * s);
+        }
 		public static ColorPack Greyscale(float s)
 		{
 			return ((byte,byte,byte))(255 * s, 255 * s, 255 * s);
