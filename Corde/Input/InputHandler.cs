@@ -206,6 +206,17 @@ namespace Corde.Input
         [DllImport("user32.dll")]
         private static extern int ShowCursor(bool bShow);
 
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        public static bool IsConsoleFocused()
+        {
+            IntPtr foregroundWindow = GetForegroundWindow();
+            IntPtr consoleWindow = GetConsoleWindow();
+
+            return foregroundWindow == consoleWindow;
+        }
+
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT
         {
@@ -313,11 +324,15 @@ namespace Corde.Input
 
         public static bool KeyPressed(Keys key)
         {
+            if (!IsConsoleFocused()) return false;
+
             return GetAsyncKeyState((int)key);
         }
 
         public static void Update()
         {
+            if (!IsConsoleFocused()) return;
+
             PrevKeysState = new(CurrentKeysState);
             foreach (var key in Enum.GetValues(typeof(Keys)).Cast<Keys>())
             {

@@ -9,6 +9,7 @@ namespace Corde.Editor
     public struct EditorSettings
     {
         public Color BackgroundColor;
+        public Color BottomBarColor;
     }
 
     public class Editor
@@ -18,6 +19,7 @@ namespace Corde.Editor
         private Buffer2D FrontBuffer;
         private Buffer2D SidebarBuffer;
         private Buffer2D TextBuffer;
+        private Buffer2D BottomBuffer;
 
         private Vec2I DocumentCursorPosition;
 
@@ -27,6 +29,8 @@ namespace Corde.Editor
         private string SourceText = "";
         private List<List<EditorSymbol>> PreparedLines = [];
 
+        private FileStream CurrentFile;
+        private bool CurrentFileSaved = false;
 
         public Editor(EditorSettings settings)
         {
@@ -38,6 +42,7 @@ namespace Corde.Editor
         public void LoadFile(string path)
         {
             SourceText = File.ReadAllText(path);
+            CurrentFile = File.OpenWrite(path);
         }
 
         private int CursorRawIndex
@@ -200,7 +205,7 @@ namespace Corde.Editor
 
             // create and mark out side bar (line numbers)
             int locn_sidebar_width = SourceText.Count(c => c == '\n').ToString().Length + 1;
-            SidebarBuffer = new(new(locn_sidebar_width, FrontBuffer.Area.Height));
+            SidebarBuffer = new(new(locn_sidebar_width, FrontBuffer.Area.Height - 1));
             SidebarBuffer.Fill(new(' ', Settings.BackgroundColor));
             
             for(int i = 0; i < SidebarBuffer.Area.Height; i++)
@@ -220,7 +225,7 @@ namespace Corde.Editor
             }
 
             // create the code text buffer
-            TextBuffer = new(new(FrontBuffer.Area.Width - locn_sidebar_width, FrontBuffer.Area.Height));
+            TextBuffer = new(new(FrontBuffer.Area.Width - locn_sidebar_width, FrontBuffer.Area.Height - 1));
 
             // Fill PreparedLines array
             int newline_count = 0;
@@ -265,6 +270,18 @@ namespace Corde.Editor
             
         }
 
+        private void AssembleBottomBuffer()
+        {
+            BottomBuffer = new(new(FrontBuffer.Area.Width, 1));
+            BottomBuffer.Fill(new(' ', Settings.BottomBarColor));
+
+            // add left corner info
+            string l_info = $"{DocumentCursorPosition.Y + 1}:{DocumentCursorPosition.X + 1} " + Path.GetFileName(CurrentFile.Name)
+                + (CurrentFileSaved ? "" : "*");
+            var name = EditorSymbol.Text(l_info, (_) => new(Settings.BottomBarColor.Background, Color.White) );
+            BottomBuffer.BlitSymbString(name, new(0, 0));
+        }
+
         private void AssembleView()
         {
             TextBuffer.Fill(new(' ', Settings.BackgroundColor));
@@ -291,11 +308,18 @@ namespace Corde.Editor
         public void Render()
         {
             PrepareLines();
+            AssembleBottomBuffer();
             AssembleView();
             SidebarBuffer.Blit(FrontBuffer, new(1, 1));
             TextBuffer.Blit(FrontBuffer, new(SidebarBuffer.Area.Width + 1, 1));
+            BottomBuffer.Blit(FrontBuffer, new(1, FrontBuffer.Area.Height));
 
             FrontBuffer.Render();
+        }
+
+        ~Editor()
+        {
+            CurrentFile.Close();
         }
     }
 }
